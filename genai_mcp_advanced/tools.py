@@ -1,10 +1,8 @@
-"""Basic GenAI Observability metric tools."""
-from typing import Any
+"""Basic metric tools."""
 from .prometheus import prom, get_value, get_values
 
 
-def get_summary(application: str | None = None, model: str | None = None) -> dict[str, Any]:
-    """Get comprehensive summary of all GenAI metrics."""
+def get_summary(application: str | None = None, model: str | None = None) -> dict:
     f = []
     if application:
         f.append(f'application="{application}"')
@@ -36,7 +34,6 @@ def get_summary(application: str | None = None, model: str | None = None) -> dic
 
 
 def get_cost(application: str | None = None, model: str | None = None, breakdown: str = "model") -> dict:
-    """Get cost breakdown."""
     f = []
     if application:
         f.append(f'application="{application}"')
@@ -52,7 +49,6 @@ def get_cost(application: str | None = None, model: str | None = None, breakdown
 
 
 def get_tokens(application: str | None = None, model: str | None = None) -> dict:
-    """Get token usage."""
     f = []
     if application:
         f.append(f'application="{application}"')
@@ -65,7 +61,6 @@ def get_tokens(application: str | None = None, model: str | None = None) -> dict
 
 
 def get_latency(application: str | None = None, model: str | None = None) -> dict:
-    """Get latency percentiles."""
     f = []
     if application:
         f.append(f'application="{application}"')
@@ -83,7 +78,6 @@ def get_latency(application: str | None = None, model: str | None = None) -> dic
 
 
 def get_quality(application: str | None = None) -> dict:
-    """Get quality metrics."""
     af = f'application="{application}"' if application else 'application=~".+"'
     results = {}
     for m in ["groundedness", "relevance", "coherence", "fluency"]:
@@ -99,7 +93,6 @@ def get_quality(application: str | None = None) -> dict:
 
 
 def get_rag_metrics(application: str | None = None) -> dict:
-    """Get RAG metrics."""
     af = f'application="{application}"' if application else 'application=~".+"'
     results = {}
     for m in ["precision", "recall"]:
@@ -115,7 +108,6 @@ def get_rag_metrics(application: str | None = None) -> dict:
 
 
 def get_ttft(application: str | None = None, model: str | None = None) -> dict:
-    """Get Time to First Token."""
     f = []
     if application:
         f.append(f'application="{application}"')
@@ -130,7 +122,6 @@ def get_ttft(application: str | None = None, model: str | None = None) -> dict:
 
 
 def get_security(application: str | None = None) -> dict:
-    """Get security metrics."""
     af = f'application="{application}"' if application else 'application=~".+"'
     triggers = [{"type": item["metric"].get("trigger_type", "unknown"), "count": int(item["value"])} 
                 for item in get_values(prom.query(f"sum by (trigger_type) (genai_guardrail_triggers_total{{{af}}})"))]
@@ -140,7 +131,6 @@ def get_security(application: str | None = None) -> dict:
 
 
 def get_errors(application: str | None = None, model: str | None = None) -> dict:
-    """Get error metrics."""
     f = []
     if application:
         f.append(f'application="{application}"')
@@ -149,11 +139,13 @@ def get_errors(application: str | None = None, model: str | None = None) -> dict
     fs = ",".join(f) if f else 'application=~".+"'
     errors = [{"error_type": item["metric"].get("error_type", "unknown"), "count": int(item["value"])} 
               for item in get_values(prom.query(f"sum by (error_type) (genai_errors_total{{{fs}}})"))]
-    return {"errors": errors, "total_errors": sum(e["count"] for e in errors)}
+    total = sum(e["count"] for e in errors)
+    total_req = int(get_value(prom.query(f"sum(genai_requests_total{{{fs}}})")))
+    rate = (total / total_req * 100) if total_req > 0 else 0
+    return {"errors": errors, "total_errors": total, "error_rate_percent": round(rate, 2)}
 
 
 def get_requests(application: str | None = None, model: str | None = None) -> dict:
-    """Get request counts."""
     f = []
     if application:
         f.append(f'application="{application}"')
@@ -166,17 +158,14 @@ def get_requests(application: str | None = None, model: str | None = None) -> di
 
 
 def get_applications() -> dict:
-    """Get list of applications."""
     return {"applications": prom.get_label_values("application", "genai_requests_total")}
 
 
 def get_models() -> dict:
-    """Get list of models."""
     return {"models": prom.get_label_values("model", "genai_requests_total")}
 
 
 def execute_query(promql: str) -> dict:
-    """Execute custom PromQL query."""
     resp = prom.query(promql)
     if resp.get("status") == "success":
         return {"status": "success", "results": get_values(resp)}
